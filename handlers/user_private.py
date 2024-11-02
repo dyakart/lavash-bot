@@ -56,13 +56,7 @@ async def menu_cmd(message: types.Message, session: AsyncSession):
         await message.answer_photo(
             product.image,
             caption=f"<strong>{product.name}\
-                    </strong>\n{product.description}\nВес: {product.weight} гр.\nСтоимость: {round(product.price, 2)} ₽",
-            reply_markup=get_callback_btns(btns={
-                # текст: данные, которые хотим передать с этой кнопкой
-                'Удалить': f'delete_{product.id}',
-                'Изменить': f'change_{product.id}'
-            })
-        )
+                    </strong>\n{product.description}\nВес: {product.weight} гр.\nСтоимость: {round(product.price, 2)} ₽")
     await message.answer("❤️ ОК, вот меню ⏫")
 
 
