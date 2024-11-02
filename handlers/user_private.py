@@ -14,6 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from filters.chat_types import ChatTypeFilter
 # импортируем ответные клавиатуры
 from kbds.reply import get_keyboard
+# импортируем наши инлайн клавиатуры
+from kbds.inline import get_callback_btns
 # импортируем запросы для БД
 from database.orm_query import orm_get_products
 
