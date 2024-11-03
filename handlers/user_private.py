@@ -1,23 +1,23 @@
 # обработчики событий, которые относятся к общению бота с пользователем в личке
 
 from aiogram import F, types, Router
-from aiogram.enums import ParseMode
 # импортируем систему фильтрации сообщений и для работы с командами
-from aiogram.filters import CommandStart, Command, or_f
-# импортируем классы для форматирования текста
-from aiogram.utils.formatting import as_list, as_marked_section, Bold
+from aiogram.filters import CommandStart
 # для работы с асинхронными сессиями
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # наши импорты
 # импортируем фильтр для определения личка, группа, супергруппа
 from filters.chat_types import ChatTypeFilter
-# импортируем ответные клавиатуры
-from kbds.reply import get_keyboard
 # импортируем наши инлайн клавиатуры
-from kbds.inline import get_callback_btns
+from kbds.inline import MenuCallBack, get_callback_btns
 # импортируем запросы для БД
-from database.orm_query import orm_get_products
+from database.orm_query import (
+    orm_add_to_cart,
+    orm_add_user,
+)
+# генератор меню
+from handlers.menu_processing import get_menu_content
 
 # создаем отдельный роутер для сообщений лички
 user_private_router = Router()
@@ -25,85 +25,68 @@ user_private_router = Router()
 user_private_router.message.filter(ChatTypeFilter(['private']))
 
 
-# обрабатываем команду /start
 @user_private_router.message(CommandStart())
-async def start_cmd(message: types.Message):
-    # отправляем стартовую клавиатуру пользователю
-    await message.answer('Привет, я бот кафе «La-Ваш»',
-                         reply_markup=get_keyboard(
-                             'Меню:',
-                             'О нас:',
-                             'Варианты оплаты:',
-                             'Варианты доставки:',
-                             placeholder='Что Вас интересует?',
-                             sizes=(2, 2)
-                         ),
-                         )
-
-
-# обрабатываем команду /menu
-# записываем команды, которые должны обрабатываться в Command
-# @user_private_router.message(F.text.lower() == 'меню')
-@user_private_router.message(or_f(Command('menu'), (F.text.lower() == 'меню')))
-async def menu_cmd(message: types.Message, session: AsyncSession):
-    # Получаем список товаров
-    products = await orm_get_products(session)
-    if not products:
-        await message.answer("Список товаров пуст 🚫")
+async def start_cmd(message: types.Message, session: AsyncSession):
+    # при команде /start определяем уровень 0 и название меню - main (главная страница
+    # media = image, kbds = reply_markup (from menu_processing.py)
+    media, reply_markup = await get_menu_content(session, level=0, menu_name="main")
+    if media is None:
+        await message.answer("❌ Временно недоступно!")
         return
-    # Если список не пуст, выводим товары
-    for product in products:
-        await message.answer_photo(
-            product.image,
-            caption=f"<strong>{product.name}\
-                    </strong>\n{product.description}\nВес: {product.weight} гр.\nСтоимость: {round(product.price, 2)} ₽")
-    await message.answer("❤️ ОК, вот меню ⏫")
+
+    # получаем изображение (media.media) и описание (media.caption) из объекта InputMediaPhoto
+    await message.answer_photo(media.media, caption=media.caption, reply_markup=reply_markup)
+
+    # await message.answer("Привет, я бот кафе «La-Ваш» ❤️",
+    #                      reply_markup=get_callback_btns(btns={
+    #                          'Нажми меня': 'some_1'
+    #                      }))
 
 
-# обрабатываем команду /about
-@user_private_router.message(F.text.lower() == 'о нас')
-@user_private_router.message(Command('about'))
-async def menu_cmd(message: types.Message):
-    await message.answer("О нас:")
-
-
-# обрабатываем команду /payment
-@user_private_router.message(F.text.lower() == 'варианты оплаты')
-@user_private_router.message(Command('payment'))
-async def menu_cmd(message: types.Message):
-    # текст для ответа в виде маркированного списка, сначала идёт заголовок
-    text = as_marked_section(
-        Bold('Варианты оплаты:'),
-        'Картой в боте',
-        'При получении (карта / наличные)',
-        marker='✅ '
+async def add_to_cart(callback: types.CallbackQuery, callback_data: MenuCallBack, session: AsyncSession):
+    user = callback.from_user
+    await orm_add_user(
+        session,
+        user_id=user.id,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        phone=None,
     )
-    # as_html() - обрабатываем наш ответ, как html текст
-    await message.answer(text.as_html())
+    await orm_add_to_cart(session, user_id=user.id, product_id=callback_data.product_id)
+    await callback.answer("✅ Товар добавлен в корзину!")
 
 
-# обрабатываем команду /delivery
-# F - магический фильтр, по которому будем фильтровать сообщения (указывается в конце, после других обработчиков)
-@user_private_router.message((F.text.lower().contains('доставк')) | (F.text.lower() == 'варианты доставки'))
-@user_private_router.message(Command('delivery'))
-async def menu_cmd(message: types.Message):
-    # текст для ответа в виде маркированных списков, сначала идёт заголовок
-    text = as_list(
-        as_marked_section(
-            Bold('Варианты доставки заказа:'),
-            'Курьер',
-            'Самовывоз (сейчас приеду, заберу)',
-            'Покушаю у Вас',
-            marker='✅ '
-        ),
-        as_marked_section(
-            Bold('Нельзя:'),
-            'Почта',
-            'Голуби',
-            marker='❌ '
-        ),
-        # указываем разделитель секций
-        sep='\n----------------------\n'
+# любые callback, которые будут приходить от пользователя (нажатия на инлайн кнопки, например), и где
+# есть префикс menu, будут обрабатываться здесь
+@user_private_router.callback_query(MenuCallBack.filter())
+# callback_data:MenuCallBack - чтобы получить строку из нужного callback
+async def user_menu(callback: types.CallbackQuery, callback_data: MenuCallBack, session: AsyncSession):
+    if callback_data.menu_name == "add_to_cart":
+        await add_to_cart(callback, callback_data, session)
+        return
+
+    media, reply_markup = await get_menu_content(
+        session,
+        # заполняем атрибуты из класса MenuCallBack
+        # уровень берём из callback строки
+        level=callback_data.level,
+        menu_name=callback_data.menu_name,
+        category=callback_data.category,
+        page=callback_data.page,
+        product_id=callback_data.product_id,
+        user_id=callback.from_user.id,
     )
-    # as_html() - обрабатываем наш ответ, как html текст
-    await message.answer(text.as_html())
+
+    if isinstance(media, str):
+        await callback.answer()
+        # Если media - это строка, используем callback для отправки текста
+        await callback.message.answer(media)
+        return
+
+    if media is None:
+        await callback.answer()
+        await callback.message.answer("❌ Временно недоступно!")
+        return
+
+    await callback.message.edit_media(media=media, reply_markup=reply_markup)
+    await callback.answer()

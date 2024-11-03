@@ -26,7 +26,7 @@ from database.engine import create_db, drop_db, session_maker
 from middlewares.db import DataBaseSession
 
 # импортируем наши команды для бота (private - для личных сообщений)
-from common.bot_cmds_list import private
+# from common.bot_cmds_list import private
 
 # инициализируем класс бота, передаем токен
 bot = Bot(token=os.getenv('TOKEN'), default=DefaultBotProperties(parse_mode=ParseMode.HTML))
@@ -42,10 +42,9 @@ dp.include_routers(user_private_router, user_group_router, admin_router)
 
 # функция старта
 async def on_startup(bot):
-    run_param = False
-    if run_param:
-        await drop_db()
-    # если таблицы в БД существуют, то эта функция не выполнится
+    # удалить БД (при изменении моделей или orm)
+    # await drop_db()
+    # создать БД
     await create_db()
 
 
@@ -69,8 +68,10 @@ async def main():
     await bot.delete_webhook(drop_pending_updates=True)
     # удалить все наши команды для лички
     # await bot.delete_my_commands(scope=types.BotCommandScopeAllPrivateChats())
+
     # отправляем все наши команды, которые будут у бота (только в личке)
-    await bot.set_my_commands(commands=private, scope=types.BotCommandScopeAllPrivateChats())
+    # await bot.set_my_commands(commands=private, scope=types.BotCommandScopeAllPrivateChats())
+
     # слушаем сервер telegram и постоянно спрашиваем его про наличие каких-то изменений
     # resolve_used_update_types - все изменения, которые мы используем будут отслеживаться у сервера telegram
     # например, ALLOWED_UPDATES = ['message', 'edited_message', 'callback_query']
