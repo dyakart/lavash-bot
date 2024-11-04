@@ -71,7 +71,7 @@ async def products(session, level, category, page):
     image = InputMediaPhoto(
         media=product.image,
         caption=f"<strong>{product.name}\
-                                </strong>\n{product.description}\nВес: {product.weight} {unit}\n<strong>Товар {paginator.page} из {paginator.pages}</strong>",
+                                </strong>\n{product.description}\nВес: {product.weight} {unit}\nЦена: {product.price}\n<strong>Товар {paginator.page} из {paginator.pages}</strong>",
     )
 
     pagination_btns = pages(paginator)
